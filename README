@@ -1,1 +1,3 @@
 MongoDB Gui built on python using pymongo
+
+Uses pygtk
