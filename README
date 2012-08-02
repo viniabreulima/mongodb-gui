@@ -1,3 +1,28 @@
-MongoDB Gui built on python using pymongo
+Mongui - MongoDB Gui built on python
 
-Uses GTK 3
+
+FEATURES
+
+- Tabbed interface
+
+
+
+INSTALLATION:
+
+- Depends on wxPython 2.8+ and pymongo
+
+
+
+
+TODO LIST:
+
+- Welcome Screen ?
+- Left panel for more interactivity
+- Query panel inside every tab (to filter, insert, update...)
+- Context-menu (right-click)
+- More interactivity on documents
+- Aggregation Framework Support
+- DBCommand Support
+- Server Status dialog
+- Query Snippets
+- Improve Connect Dialog into a Connection Manager
