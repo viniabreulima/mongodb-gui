@@ -1,4 +1,4 @@
-Mongui - MongoDB Gui built on python
+Mong.ui - MongoDB Gui built on python
 
 
 FEATURES
@@ -10,6 +10,13 @@ FEATURES
 INSTALLATION:
 
 - Depends on wxPython 2.8+ and pymongo
+
+
+
+CREDITS:
+
+- Development by Vinicius Lima (eu@viniciuslima.com)
+- Logo and icon artwork by Alexandre Sakai
 
 
 
