@@ -86,6 +86,9 @@ class mongodb_handler():
         page = kwargs.get('page', 0)
         limit = kwargs.get('limit', 10)
         
+        if page < 0:
+            page = 0
+        
         query = self.db[database][collection].find(query_object, fields=fields_object).skip(page * limit).limit(limit)
         
         return query
@@ -557,7 +560,7 @@ class ContentTab(wx.Panel):
 class ContentManager():
     
     # @brief Sets the limit of documents per page
-    LIMITPERPAGE = 50
+    LIMITPERPAGE = 25
 
     ##
     # @brief Constructor
