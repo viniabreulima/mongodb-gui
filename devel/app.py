@@ -6,7 +6,8 @@
 # @brief All code for Mongui App
 #
 import wx , pymongo , time , datetime , bson , json , math
-import  wx.lib.scrolledpanel as wxScrolledPanel
+import wx.lib.scrolledpanel as wxScrolledPanel
+from bson import json_util
 
 ##
 # @brief Handles the MongoDB Connection
@@ -74,22 +75,18 @@ class mongodb_handler():
     ##
     # @brief Returns documents from database and collection params
     # @details May receive the following kwargs:
-    # - query = Dict for querying the collection
+    # - find = Dict for querying the collection
     # - fields = Dict containing the fields that will return
     # - page = Int for skipping documents (starts with ZERO)
     # - limit = Int for maximum documents returned
     #
     def GetDocuments(self, database, collection, **kwargs):
-        query_object = kwargs.get('query', {})
-        fields_object = kwargs.get('fields', None)
-        
         page = kwargs.get('page', 0)
         limit = kwargs.get('limit', 10)
-        
         if page < 0:
             page = 0
         
-        query = self.db[database][collection].find(query_object, fields=fields_object).skip(page * limit).limit(limit)
+        query = self.db[database][collection].find(kwargs.get('find', {}), fields=kwargs.get('fields', None)).skip(page * limit).limit(limit)
         
         return query
     
@@ -100,44 +97,21 @@ class mongodb_handler():
     # - query = Dict for querying the collection
     #
     def CountDocuments(self, database, collection, **kwargs):
-        query_object = kwargs.get('query', {})
-        return self.db[database][collection].find(query_object).count()
+        return self.db[database][collection].find(kwargs.get('find', {}), fields=kwargs.get('fields', None)).count()
 
     
     ##
     # @brief Dumps the BSON in String
     #    
     def bsondump(self , param , return_string=True):
-        new_json = {}
-        if isinstance(param , list):
-            i = 0
-            d = {}
-            for p in param:
-                d.setdefault(str(i) , p)
-        elif isinstance(param , dict):
-            d = param
-        else:
-            return param
+        return json.dumps(param , default=json_util.default , sort_keys=True, indent=4)
 
-        for k, v in d.items():
-            if isinstance(v , bson.objectid.ObjectId):
-                v = unicode(v)
-            elif isinstance(v , datetime.datetime):
-                v = v.isoformat()
-            elif isinstance(v , dict) or isinstance(v , list):
-                v = self.bsondump(v , False)
-
-            new_json.setdefault(k , v)
-        
-        if return_string:
-            return json.dumps(new_json , False , True , True , True , json.JSONEncoder , 4)
-        else:
-            return new_json
-
-
-    def bsonload(self,string):
+    ##
+    # @brief Loads the BSON string
+    #
+    def bsonload(self, string):
         try:
-            ret = json.loads( string.strip() )
+            ret = json.loads(string.strip() , object_hook=json_util.object_hook)
         except:
             return False
         else:
@@ -437,10 +411,10 @@ class ContentTab(wx.Panel):
         self.sizer.Add(sizer_topmenu , 0 , wx.EXPAND)
         
         # Building Splitter
-        self.splitter = wx.SplitterWindow(self, style = wx.SP_3D)
+        self.splitter = wx.SplitterWindow(self, style=wx.SP_3D)
 
         # Building Query Panel
-        self.panel_query = QueryPanel(self.splitter,self.manager)
+        self.panel_query = QueryPanel(self.splitter, self.manager)
 
         # Building Content Panel
         self.scrollpanel_content = wxScrolledPanel.ScrolledPanel(self.splitter)
@@ -451,8 +425,8 @@ class ContentTab(wx.Panel):
         #self.scrollpanel_content.SetAutoLayout(1)
 
         # Joining all together
-        self.splitter.Initialize( self.scrollpanel_content)
-        self.splitter.Bind( wx.EVT_SPLITTER_DCLICK , self.OnSplitterSashDclick )
+        self.splitter.Initialize(self.scrollpanel_content)
+        self.splitter.Bind(wx.EVT_SPLITTER_DCLICK , self.OnSplitterSashDclick)
         self.sizer.Add(self.splitter , 1 , wx.EXPAND)
         
         self.PopulateWithDatabases(self.combobox_database)
@@ -466,7 +440,7 @@ class ContentTab(wx.Panel):
     ##
     # @brief Double Click Sash Splitter - Prevents the remove 
     #
-    def OnSplitterSashDclick(self,event=None):
+    def OnSplitterSashDclick(self, event=None):
         event.Veto()
 
     ##
@@ -500,7 +474,7 @@ class ContentTab(wx.Panel):
     def PopulateWithDatabases(self, obj):
         obj.SetValue('')
         obj.Clear()
-        for database in db.GetDatabases():
+        for database in sorted( db.GetDatabases() ):
             obj.Append(database)
 
 
@@ -510,7 +484,7 @@ class ContentTab(wx.Panel):
     def PopulateWithCollections(self, obj, database):
         obj.SetValue('')
         obj.Clear()
-        for collection in db.GetCollections(database):
+        for collection in sorted( db.GetCollections(database) ):
             obj.Append(collection)
 
 
@@ -520,7 +494,7 @@ class ContentTab(wx.Panel):
     def OnToggleQueryPanel(self, event=None):
         if self.togglebutton_querypanel.GetValue():
             # Shows Panel
-            self.splitter.SplitVertically(self.panel_query,self.scrollpanel_content)
+            self.splitter.SplitVertically(self.panel_query, self.scrollpanel_content)
         else:
             # Hides Panel
             self.splitter.Unsplit(toRemove=self.panel_query)
@@ -568,7 +542,8 @@ class ContentManager():
     def __init__(self, tab):
         self.enable_buttons = False
         self.tab = tab
-        self.query_object = {}
+        self.query_object_find = {}
+        self.query_object_fields = None
 
     ##
     # @brief Returns the documents total number from active tab
@@ -576,7 +551,7 @@ class ContentManager():
     def CountDocuments(self):
         database = self.tab.combobox_database.GetValue()
         collection = self.tab.combobox_collection.GetValue()
-        return db.CountDocuments(database , collection , query=self.query_object)
+        return db.CountDocuments(database , collection , find=self.query_object_find , fields=self.query_object_fields)
 
     ##
     # @brief Renders the documents for the active tab
@@ -587,7 +562,7 @@ class ContentManager():
         collection = self.tab.combobox_collection.GetValue()
 
         self.tab.flexsizer_content.Clear(True)
-        for document in db.GetDocuments(database , collection , query=self.query_object , page=self.tab.spinctrl_page.GetValue() - 1 , limit=self.LIMITPERPAGE):
+        for document in db.GetDocuments(database , collection , find=self.query_object_find , fields=self.query_object_fields , page=self.tab.spinctrl_page.GetValue() - 1 , limit=self.LIMITPERPAGE):
             self.enable_buttons = True
             self.tab.flexsizer_content.Add(DocumentRenderer(parent=self.tab.scrollpanel_content, document=document, onclick=self.OnDocumentClick))
         
@@ -601,15 +576,23 @@ class ContentManager():
 
     
     ##
+    # @brief 
     #
-    #
-    def SetQueryObject(self,obj,reset_page = True):
-        if isinstance( obj , dict ):
-            self.query_object = obj
+    def SetQueryObject(self, **kwargs):
+        if isinstance(kwargs.get('find', {}) , dict):
+            self.query_object_find = kwargs.get('find', {})
         else:
-            self.query_object = {}
+            self.query_object_find = {}
+            
+        if isinstance(kwargs.get('fields', None) , dict):
+            if kwargs.get('fields', None) == {}:
+                self.query_object_fields = None
+            else:
+                self.query_object_fields = kwargs.get('fields', None)
+        else:
+            self.query_object_fields = None
         
-        if reset_page:
+        if kwargs.get('reset_page', True):
             self.tab.spinctrl_page.SetValue(1)
             
 ##
@@ -638,8 +621,8 @@ class DocumentRenderer(wx.BoxSizer):
         font = wx.Font(10, wx.MODERN, wx.NORMAL, wx.NORMAL, False, u'Monospace')
         
         #self.content = wx.TextCtrl(collapsible.GetPane() , wx.ID_ANY , value=document_text , style=wx.TE_READONLY | wx.TE_MULTILINE )
-        self.content = wx.StaticText(collapsible.GetPane() , wx.ID_ANY , label=document_text )
-        self.content.SetFont( font )
+        self.content = wx.StaticText(collapsible.GetPane() , wx.ID_ANY , label=document_text)
+        self.content.SetFont(font)
 
         
 
@@ -663,8 +646,8 @@ class QueryPanel(wx.Panel):
     ##
     # @brief Constructor
     #
-    def __init__(self, parent,manager):
-        wx.Panel.__init__(self,parent)
+    def __init__(self, parent, manager):
+        wx.Panel.__init__(self, parent)
 
         self.sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.parent = parent
@@ -672,13 +655,13 @@ class QueryPanel(wx.Panel):
         
         self.sizer_leftmenu = wx.BoxSizer(wx.VERTICAL)
         self.togglebuttons_tabs = [
-              wx.ToggleButton(self , wx.ID_ANY , label='Find' ,name='find')
-            , wx.ToggleButton(self , wx.ID_ANY , label='Update',name='update')
-            , wx.ToggleButton(self , wx.ID_ANY , label='Remove',name='remove')
-            , wx.ToggleButton(self , wx.ID_ANY , label='Aggregate',name='aggregate')
+              wx.ToggleButton(self , wx.ID_ANY , label='Find' , name='find')
+            , wx.ToggleButton(self , wx.ID_ANY , label='Update', name='update')
+            , wx.ToggleButton(self , wx.ID_ANY , label='Remove', name='remove')
+            , wx.ToggleButton(self , wx.ID_ANY , label='Aggregate', name='aggregate')
         ]
         for b in self.togglebuttons_tabs:
-            self.sizer_leftmenu.Add( b , 0 , wx.EXPAND)
+            self.sizer_leftmenu.Add(b , 0 , wx.EXPAND)
             b.Bind(wx.EVT_TOGGLEBUTTON , self.OnChangeTab)
         
         self.sizer_leftmenu.AddSpacer(10)
@@ -690,12 +673,12 @@ class QueryPanel(wx.Panel):
         
         self.sizer.Add(self.sizer_leftmenu , 0 , wx.EXPAND)
         
-        self.sizer_content = wx.BoxSizer(wx.HORIZONTAL)
+        self.sizer_content = wx.BoxSizer(wx.VERTICAL)
         
         self.sizer.Add(self.sizer_content , 1 , wx.EXPAND)
 
         self.togglebuttons_tabs[0].SetValue(True)
-        self.ChangeTab( self.togglebuttons_tabs[0].GetName() )
+        self.ChangeTab(self.togglebuttons_tabs[0].GetName())
 
         self.SetSizerAndFit(self.sizer)
 
@@ -707,19 +690,26 @@ class QueryPanel(wx.Panel):
             for b in self.togglebuttons_tabs:
                 b.SetValue(False)
         event.EventObject.SetValue(True)
-        self.ChangeTab( event.EventObject.GetName() )
+        self.ChangeTab(event.EventObject.GetName())
     
     ##
     # @brief Changes the content from sizer_content
     #
-    def ChangeTab(self,tab):
+    def ChangeTab(self, tab):
         self.sizer_content.Clear(True)
         if tab == 'find':
             self.execute_param = 'find'
             font = wx.Font(10, wx.MODERN, wx.NORMAL, wx.NORMAL, False, u'Monospace')
-            self.input_find = wx.TextCtrl( self , wx.ID_ANY , style= wx.TE_PROCESS_TAB | wx.TE_MULTILINE  )
+            self.input_find = wx.TextCtrl(self , wx.ID_ANY , style=wx.TE_PROCESS_TAB | wx.TE_MULTILINE)
             self.input_find.SetFont(font)
-            self.sizer_content.Add( self.input_find , 1 , wx.EXPAND )
+            self.sizer_content.Add(wx.StaticText(self , wx.ID_ANY , label='Find Object') , 0 , wx.EXPAND)
+            self.sizer_content.Add(self.input_find , 1 , wx.EXPAND)
+            
+            self.input_fields = wx.TextCtrl(self , wx.ID_ANY , style=wx.TE_PROCESS_TAB | wx.TE_MULTILINE)
+            self.input_fields.SetFont(font)
+            self.sizer_content.Add(wx.StaticText(self , wx.ID_ANY , label='Fields Object') , 0 , wx.EXPAND)
+            self.sizer_content.Add(self.input_fields , 1 , wx.EXPAND)
+            
             self.input_find.SetFocus()
         elif tab == 'update':
             pass
@@ -735,9 +725,21 @@ class QueryPanel(wx.Panel):
     #    
     def OnExecute(self, event=None):
         if self.execute_param == 'find':
-            query_obj = db.bsonload( self.input_find.GetValue() )
-            if query_obj:
-                self.manager.SetQueryObject( query_obj )
+            find_value = self.input_find.GetValue().strip()
+            if find_value == '':
+                find_obj = {}
+            else:
+                find_obj = db.bsonload(find_value)
+
+            fields_value = self.input_fields.GetValue().strip()
+            if fields_value == '':
+                fields_obj = {}
+            else:
+                fields_obj = db.bsonload(fields_value)
+
+
+            if find_obj != False and fields_obj != False:
+                self.manager.SetQueryObject(find=find_obj, fields=fields_obj)
                 self.manager.ShowDocuments()
             else:
                 wx.MessageBox('Invalid JSON object', 'Error', wx.OK | wx.ICON_ERROR)
