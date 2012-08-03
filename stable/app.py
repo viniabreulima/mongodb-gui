@@ -40,7 +40,6 @@ class mongodb_handler():
     # @brief Disconnects from Mongo host
     #
     def Disconnect(self):
-        print "Disconnecting"
         if self.CheckConnection():
             self.db.disconnect()
             self.db = False
@@ -168,7 +167,6 @@ class MainFrame(wx.Frame):
         
         FileMenu.AppendSeparator()
 
-
         self.menuitem_connect = FileMenu.Append(wx.ID_ANY, text="C&onnect...\tCtrl+C")
         self.Bind(wx.EVT_MENU, self.OnConnect, self.menuitem_connect)
         
@@ -184,16 +182,7 @@ class MainFrame(wx.Frame):
         menuitem_quit = FileMenu.Append(wx.ID_EXIT, text="&Quit\tCtrl+Q")
         self.Bind(wx.EVT_MENU, self.OnQuit, menuitem_quit)
 
-
-        self.menuitem_showleftpanel = ShowMenu.Append(wx.ID_ANY, text="Show &Left Panel" , kind=wx.ITEM_CHECK)
-        ShowMenu.Check(self.menuitem_showleftpanel.GetId(), True)
-        self.Bind(wx.EVT_MENU, self.OnShowLeftPanel, self.menuitem_showleftpanel)
-
-
-
         MenuBar.Append(FileMenu, "&File")
-        #@TODO Fix the show/hide left panel
-        #MenuBar.Append(ShowMenu, "&Show")
         self.SetMenuBar(MenuBar)
 
         self.Panel = MainPanel(self)
@@ -208,7 +197,6 @@ class MainFrame(wx.Frame):
         self.Panel.sizer_main.Add(self.sizer_leftmenu , 0)
         self.Panel.sizer_main.Add(self.tabs , 1 , wx.EXPAND)
         
-        #self.Fit()
 
     ##
     # @brief Closes the app
@@ -220,23 +208,19 @@ class MainFrame(wx.Frame):
     # @brief About dialog
     #
     def OnAbout(self, event=None):
-        
         description = """MongoDB Gui"""
-        licence = """The licence"""
+        licence = ""
 
         info = wx.AboutDialogInfo()
 
-        #info.SetIcon(wx.Icon('path.png', wx.BITMAP_TYPE_PNG))
-        info.SetName('Mongui')
-        info.SetVersion('0.1a')
+        info.SetIcon(wx.Icon('img/mongui-logo.png', wx.BITMAP_TYPE_PNG))
+        info.SetName('Mong.ui')
+        info.SetVersion('0.1')
         info.SetDescription(description)
-        #info.SetCopyright('')
         info.SetWebSite('https://github.com/viniabreulima/mongodb-gui')
         info.SetLicence(licence)
-        info.AddDeveloper('Vinicius Lima')
-        #info.AddDocWriter('Vinicius Lima')
-        #info.AddArtist('')
-        #info.AddTranslator('')
+        info.AddDeveloper('Vinicius Lima (eu@viniciuslima.com)')
+        info.AddArtist('Alexandre Sakai')
 
         wx.AboutBox(info)
 
@@ -250,33 +234,23 @@ class MainFrame(wx.Frame):
         connect.ShowModal()
         connect.Destroy()
         if not self.connect_window_cancelled:
-            print 'New connection'
             if db.CheckConnection():
                 self.menuitem_disconnect.Enable(True)
                 self.NewTab('clear')
             else:
                 self.menuitem_disconnect.Enable(False)
-        else:
-            print 'Connect window cancelled'
+
     ##
     # @brief Menu Disconnect - Disconnects from MongoDB
     #
     def OnDisconnect(self, event=None):
         db.Disconnect()
+        self.CloseTab('all')
+        self.menuitem_newtab.Enable(False)
         if db.CheckConnection():
             self.menuitem_disconnect.Enable(True)
         else:
             self.menuitem_disconnect.Enable(False)
-
-    ##
-    # @brief Show/hide the left panel
-    # @TODO Isn't working!!
-    #
-    def OnShowLeftPanel(self, event=None):
-        if self.menuitem_showleftpanel.IsChecked():
-            print 'hide'
-        else:
-            print 'show'
 
     ##
     # @brief Menu New tab - Creates a new tab
@@ -309,15 +283,13 @@ class MainFrame(wx.Frame):
     # @brief Closes the tab, according to the params
     #
     def CloseTab(self, param):
-        print 'Close tab'
-       
         if param == 'all':
             self.tabs.DeleteAllPages()
         
         elif param == 'current':
             self.tabs.DeletePage(self.tabs.GetSelection())
 
-        self.menuitem_closetab.Enable( self.tabs.GetPageCount() > 1 )
+        self.menuitem_closetab.Enable(self.tabs.GetPageCount() > 1)
 
 
 
@@ -345,9 +317,9 @@ class ConnectDialog(wx.Dialog):
         label_port = wx.StaticText(self, label="Port: ")
         
         self.input_host = wx.TextCtrl(self, size=(150, -1), value='localhost' , style=wx.TE_PROCESS_ENTER)
-        self.input_host.Bind( wx.EVT_TEXT_ENTER , self.OnConnect )
+        self.input_host.Bind(wx.EVT_TEXT_ENTER , self.OnConnect)
         self.input_port = wx.TextCtrl(self, size=(150, -1) , style=wx.TE_PROCESS_ENTER)
-        self.input_port.Bind( wx.EVT_TEXT_ENTER , self.OnConnect )
+        self.input_port.Bind(wx.EVT_TEXT_ENTER , self.OnConnect)
         self.button_connect = wx.Button(self, label='Connect')
         self.button_connect.Bind(wx.EVT_BUTTON , self.OnConnect)
         
@@ -378,12 +350,10 @@ class ConnectDialog(wx.Dialog):
         if self.input_port.GetValue() != '':
             port = self.input_port.GetValue()
         if db.Connect(host , port):
-            print 'Connection successful'
             self.Parent.connect_window_cancelled = False
             self.Destroy()
         else:
             wx.MessageBox('Error connecting to host', 'Error', wx.OK | wx.ICON_ERROR)
-            print 'Error connecting'
 
 
 ##
@@ -395,7 +365,7 @@ class ContentTab(wx.Panel):
     #
     def __init__(self, *args, **kwargs):
         wx.Panel.__init__(self, *args, **kwargs)
-        
+
         self.manager = ContentManager(self)
         
         self.sizer = wx.BoxSizer(wx.VERTICAL)
@@ -406,7 +376,6 @@ class ContentTab(wx.Panel):
         self.combobox_collection = wx.ComboBox(self , wx.ID_ANY , style=wx.CB_READONLY)
         self.combobox_collection.Bind(wx.EVT_COMBOBOX , self.OnSelectCollection)
         
-        self.togglebutton_querypanel = wx.ToggleButton(self , wx.ID_ANY , label="Query Panel")
         self.spinctrl_page = wx.SpinCtrl(self, wx.ID_ANY , value='')
         self.spinctrl_page.Bind(wx.EVT_SPINCTRL , self.OnChangePage)
         self.label_pages = wx.StaticText(self , wx.ID_ANY , label='')
@@ -417,8 +386,6 @@ class ContentTab(wx.Panel):
             , (wx.StaticText(self, wx.ID_ANY , label="Collection: ") , 0, wx.EXPAND)
             , (self.combobox_collection , 0 , wx.EXPAND)
         ])
-        sizer_topmenu.AddSpacer(10)
-        sizer_topmenu.Add(self.togglebutton_querypanel , 0)
         sizer_topmenu.AddSpacer(10)
         sizer_topmenu.AddMany([
               (wx.StaticText(self, wx.ID_ANY , label="Page: ") , 0, wx.EXPAND)
@@ -503,14 +470,11 @@ class ContentTab(wx.Panel):
     #
     def RefreshButtons(self):
         if self.manager.enable_buttons:
-            self.togglebutton_querypanel.Enable(True)
             self.spinctrl_page.Enable(True)
             max_pages = int(math.ceil(float(self.manager.CountDocuments()) / float(self.manager.LIMITPERPAGE)))
             self.spinctrl_page.SetRange(1 , max_pages)
             self.label_pages.SetLabel('of ' + str(max_pages) + ' pages')
         else:
-            self.togglebutton_querypanel.Enable(False)
-            self.togglebutton_querypanel.SetValue(False)
             self.spinctrl_page.Enable(False)
             self.spinctrl_page.SetValue(1)
             self.label_pages.SetLabel('')
@@ -549,28 +513,49 @@ class ContentManager():
         self.tab.flexsizer_content.Clear(True)
         for document in db.GetDocuments(database , collection , page=self.tab.spinctrl_page.GetValue() - 1 , limit=self.LIMITPERPAGE):
             self.enable_buttons = True
-            document_text = db.bsondump(document)
-            
-            if '_id' in document:
-                collapsible_label = '_id: ' + str(document['_id'])
-            else:
-                collapsible_label = 'document without id'
-
-            collapsible = wx.CollapsiblePane(self.tab.scrollpanel_content , wx.ID_ANY , label=collapsible_label)
-            collapsible.Bind(wx.EVT_COLLAPSIBLEPANE_CHANGED , self.OnDocumentClick)
-            wx.StaticText(collapsible.GetPane() , wx.ID_ANY , label=document_text)
-
-            container = wx.BoxSizer(wx.VERTICAL)
-            container.Add(collapsible , 1 , wx.GROW)
-            self.tab.flexsizer_content.Add(container)
+            self.tab.flexsizer_content.Add(DocumentRenderer(parent=self.tab.scrollpanel_content, document=document, onclick=self.OnDocumentClick))
         
         self.tab.Refresh()
-    
+
     ##
-    # @brief Collapsible Pane Document clicked - Refreshs the layout to accept the new document size
+    # @brief Document clicked - Refreshs the layout to accept the new document size
+    #
+    def OnDocumentClick(self):
+        self.tab.Refresh(buttons=False)
+
+##
+# @brief Stores the document data, widgets and events
+#
+class DocumentRenderer(wx.BoxSizer):
+    ##
+    # @brief Constructor
+    #
+    def __init__(self, **kwargs):
+        wx.BoxSizer.__init__(self, wx.VERTICAL)
+        self.document = kwargs.get('document')
+        self.parent = kwargs.get('parent')
+        self.onclick = kwargs.get('onclick')
+
+        document_text = db.bsondump(self.document)
+        
+        if '_id' in self.document:
+            collapsible_label = '_id: ' + str(self.document['_id'])
+        else:
+            collapsible_label = 'document without id'
+
+        collapsible = wx.CollapsiblePane(self.parent , wx.ID_ANY , label=collapsible_label)
+        collapsible.Bind(wx.EVT_COLLAPSIBLEPANE_CHANGED , self.OnDocumentClick)
+        wx.StaticText(collapsible.GetPane() , wx.ID_ANY , label=document_text)
+
+        self.Add(collapsible , 1 , wx.GROW)
+
+
+    ##
+    # @brief Collapsible Pane Document clicked - Executes the onclick param from parent
     #
     def OnDocumentClick(self, event=None):
-        self.tab.Refresh(buttons=False)
+        self.onclick()
+
 
 ###################################################################################################
 
@@ -578,6 +563,7 @@ if __name__ == '__main__':
     db = mongodb_handler()
     app = wx.App()
     frame = MainFrame(None, title="Mongui - MongoDB Gui", size=(900, 500))
+    frame.SetIcon(wx.Icon('img/mongui-icon.ico', wx.BITMAP_TYPE_ICO , 16 , 16))
     frame.Show()
     app.MainLoop()
 
