@@ -91,6 +91,7 @@ class mongodb_handler():
         return query
     
     
+    
     ##
     # @brief Returns the count of documents from database and collection params
     # @details May receive the following kwargs:
@@ -99,6 +100,17 @@ class mongodb_handler():
     def CountDocuments(self, database, collection, **kwargs):
         return self.db[database][collection].find(kwargs.get('find', {}), fields=kwargs.get('fields', None)).count()
 
+
+    ##
+    # @brief Handler for Aggregation command
+    #
+    def RunAggregation(self, database, collection, pipeline_param, **kwargs):
+        if isinstance(pipeline_param , list): 
+            res = self.db['database'].command('aggregate' , collection , pipeline=pipeline_param)
+            print res
+            return res['result']
+        else:
+            return False
     
     ##
     # @brief Dumps the BSON in String
@@ -474,7 +486,7 @@ class ContentTab(wx.Panel):
     def PopulateWithDatabases(self, obj):
         obj.SetValue('')
         obj.Clear()
-        for database in sorted( db.GetDatabases() ):
+        for database in sorted(db.GetDatabases()):
             obj.Append(database)
 
 
@@ -484,7 +496,7 @@ class ContentTab(wx.Panel):
     def PopulateWithCollections(self, obj, database):
         obj.SetValue('')
         obj.Clear()
-        for collection in sorted( db.GetCollections(database) ):
+        for collection in sorted(db.GetCollections(database)):
             obj.Append(collection)
 
 
@@ -557,12 +569,17 @@ class ContentManager():
     # @brief Renders the documents for the active tab
     # @TODO Make the document more 'interactive'
     #
-    def ShowDocuments(self):
+    def ShowDocuments(self, **kwargs):
         database = self.tab.combobox_database.GetValue()
         collection = self.tab.combobox_collection.GetValue()
-
+        
         self.tab.flexsizer_content.Clear(True)
-        for document in db.GetDocuments(database , collection , find=self.query_object_find , fields=self.query_object_fields , page=self.tab.spinctrl_page.GetValue() - 1 , limit=self.LIMITPERPAGE):
+        
+        if kwargs.get('aggregate', False):
+            documents = db.RunAggregation(database, collection, kwargs.get('aggregate', False))
+        else:
+            documents = db.GetDocuments(database , collection , find=self.query_object_find , fields=self.query_object_fields , page=self.tab.spinctrl_page.GetValue() - 1 , limit=self.LIMITPERPAGE)
+        for document in documents:
             self.enable_buttons = True
             self.tab.flexsizer_content.Add(DocumentRenderer(parent=self.tab.scrollpanel_content, document=document, onclick=self.OnDocumentClick))
         
@@ -716,7 +733,13 @@ class QueryPanel(wx.Panel):
         elif tab == 'remove':
             pass
         elif tab == 'aggregate':
-            pass
+            self.execute_param = 'aggregate'
+            font = wx.Font(10, wx.MODERN, wx.NORMAL, wx.NORMAL, False, u'Monospace')
+            self.input_pipeline = wx.TextCtrl(self , wx.ID_ANY , style=wx.TE_PROCESS_TAB | wx.TE_MULTILINE)
+            self.input_pipeline.SetFont(font)
+            self.sizer_content.Add(wx.StaticText(self , wx.ID_ANY , label='Pipeline') , 0 , wx.EXPAND)
+            self.sizer_content.Add(self.input_pipeline , 1 , wx.EXPAND)
+
 
         self.sizer_content.Layout()
     ##
@@ -742,10 +765,22 @@ class QueryPanel(wx.Panel):
                 self.manager.SetQueryObject(find=find_obj, fields=fields_obj)
                 self.manager.ShowDocuments()
             else:
-                wx.MessageBox('Invalid JSON object', 'Error', wx.OK | wx.ICON_ERROR)
+                wx.MessageBox('Invalid BSON object', 'Error', wx.OK | wx.ICON_ERROR)
 
+        elif self.execute_param == 'aggregate':
+            aggregate_value = self.input_pipeline.GetValue().strip()
+            if aggregate_value == '':
+                aggregate_obj = {}
+            else:
+                aggregate_obj = db.bsonload(aggregate_value)
+
+            if aggregate_obj != False:
+                self.manager.ShowDocuments(aggregate=aggregate_obj)
+            else:
+                wx.MessageBox('Invalid BSON object', 'Error', wx.OK | wx.ICON_ERROR)
         else:
             print event
+
 
 
 ###################################################################################################
