@@ -9,6 +9,9 @@ import wx , pymongo , time , datetime , bson , json , math
 import wx.lib.scrolledpanel as wxScrolledPanel
 from bson import json_util
 
+def fuuu(self,event=None):
+    print 'oowwowo'
+
 ##
 # @brief Handles the MongoDB Connection
 #
@@ -88,7 +91,7 @@ class mongodb_handler():
         
         query = self.db[database][collection].find(kwargs.get('find', {}), fields=kwargs.get('fields', None)).skip(page * limit).limit(limit)
         
-        return query
+        return { 'err':False , 'result' : query }
     
     
     
@@ -106,9 +109,17 @@ class mongodb_handler():
     #
     def RunAggregation(self, database, collection, pipeline_param, **kwargs):
         if isinstance(pipeline_param , list): 
-            res = self.db['database'].command('aggregate' , collection , pipeline=pipeline_param)
+            try:
+                res = self.db[database].command('aggregate' , collection , pipeline=pipeline_param)
+            except pymongo.errors.OperationFailure as e:
+                print e
+                return { 'err' : True , 'errmsg' : e.message }
+            except:
+                return { 'err' : True , 'errmsg' : 'Error on operation' }
+            else:
+                return { 'err' : False , 'result' : res['result'] }
             print res
-            return res['result']
+            return 
         else:
             return False
     
@@ -138,6 +149,7 @@ class MainPanel(wx.Panel):
         self.parent = parent
         self.sizer_main = wx.BoxSizer(wx.HORIZONTAL)
         self.SetSizerAndFit(self.sizer_main)
+
 
 ##
 # @brief The app frame
@@ -185,8 +197,6 @@ class MainFrame(wx.Frame):
         self.menuitem_showleftpanel = ShowMenu.Append(wx.ID_ANY, text="Show &Left Panel" , kind=wx.ITEM_CHECK)
         ShowMenu.Check(self.menuitem_showleftpanel.GetId(), True)
         self.Bind(wx.EVT_MENU, self.OnShowLeftPanel, self.menuitem_showleftpanel)
-
-
 
         MenuBar.Append(FileMenu, "&File")
         #@TODO Fix the show/hide left panel
@@ -424,6 +434,7 @@ class ContentTab(wx.Panel):
         
         # Building Splitter
         self.splitter = wx.SplitterWindow(self, style=wx.SP_3D)
+        self.splitter.Bind(wx.EVT_RIGHT_UP , fuuu)
 
         # Building Query Panel
         self.panel_query = QueryPanel(self.splitter, self.manager)
@@ -579,10 +590,14 @@ class ContentManager():
             documents = db.RunAggregation(database, collection, kwargs.get('aggregate', False))
         else:
             documents = db.GetDocuments(database , collection , find=self.query_object_find , fields=self.query_object_fields , page=self.tab.spinctrl_page.GetValue() - 1 , limit=self.LIMITPERPAGE)
-        for document in documents:
-            self.enable_buttons = True
-            self.tab.flexsizer_content.Add(DocumentRenderer(parent=self.tab.scrollpanel_content, document=document, onclick=self.OnDocumentClick))
         
+        if documents['err']:
+            wx.MessageBox('Error querying mongo:\n' + documents['errmsg'], 'Error', wx.OK | wx.ICON_ERROR)
+        else:
+            for document in documents['result']:
+                self.enable_buttons = True
+                self.tab.flexsizer_content.Add(DocumentRenderer(parent=self.tab.scrollpanel_content, document=document, onclick=self.OnDocumentClick))
+            
         self.tab.Refresh()
 
     ##
@@ -634,12 +649,15 @@ class DocumentRenderer(wx.BoxSizer):
 
         collapsible = wx.CollapsiblePane(self.parent , wx.ID_ANY , label=collapsible_label)
         collapsible.Bind(wx.EVT_COLLAPSIBLEPANE_CHANGED , self.OnDocumentClick)
+        collapsible.Bind(wx.EVT_RIGHT_UP, self.OnDocumentRightClick)
         
         font = wx.Font(10, wx.MODERN, wx.NORMAL, wx.NORMAL, False, u'Monospace')
         
         #self.content = wx.TextCtrl(collapsible.GetPane() , wx.ID_ANY , value=document_text , style=wx.TE_READONLY | wx.TE_MULTILINE )
         self.content = wx.StaticText(collapsible.GetPane() , wx.ID_ANY , label=document_text)
         self.content.SetFont(font)
+        self.content.Bind(wx.EVT_RIGHT_UP, self.OnContentRightClick)
+        self.content.Bind(wx.EVT_LEFT_DCLICK, self.OnContentDoubleClick)
 
         
 
@@ -654,6 +672,43 @@ class DocumentRenderer(wx.BoxSizer):
         #print self.content.GetBestSize()
         #self.content.SetBestFittingSize()
         self.onclick()
+
+    ##
+    # @brief Collapsible Pane Document clicked right-clicked - Opens Context Menu
+    #
+    def OnDocumentRightClick(self,event=None):
+        print 'collapsible right clicked'
+
+    ##
+    # @brief Static Text Content double-clicked - Opens Edit Window
+    #
+    def OnContentDoubleClick(self,event=None):
+        print event.EventObject.content
+
+    ##
+    # @brief Static Text Content right-clicked - Opens Context Menu
+    #
+    def OnContentRightClick(self,event=None):
+        obj = event.EventObject
+        obj.PopupMenu(DocumentContextMenu(obj), event.GetPosition())
+
+
+##
+# @brief The Document Context Menu opened via right-click
+#
+class DocumentContextMenu(wx.Menu):
+    
+    def __init__(self, parent):
+        wx.Menu.__init__(self)
+        
+        self.parent = parent
+
+        m1 = wx.MenuItem(self, wx.ID_ANY, 'm1')
+        self.AppendItem(m1)
+        #self.Bind(wx.EVT_MENU, self.OnMinimize, mmi)
+
+        m2 = wx.MenuItem(self, wx.ID_ANY, 'm2')
+        self.AppendItem(m2)
 
 
 ##
