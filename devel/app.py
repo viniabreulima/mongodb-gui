@@ -9,13 +9,11 @@ import wx , pymongo , time , datetime , bson , json , math
 import wx.lib.scrolledpanel as wxScrolledPanel
 from bson import json_util
 
-def fuuu(self,event=None):
-    print 'oowwowo'
 
 ##
 # @brief Handles the MongoDB Connection
 #
-class mongodb_handler():
+class MongodbHandler():
     ##
     # @brief Constructor - creates the 'db'
     #
@@ -93,8 +91,7 @@ class mongodb_handler():
         
         return { 'err':False , 'result' : query }
     
-    
-    
+
     ##
     # @brief Returns the count of documents from database and collection params
     # @details May receive the following kwargs:
@@ -102,6 +99,23 @@ class mongodb_handler():
     #
     def CountDocuments(self, database, collection, **kwargs):
         return self.db[database][collection].find(kwargs.get('find', {}), fields=kwargs.get('fields', None)).count()
+
+    ##
+    # @brief Updates documents from database and collection params
+    # @details May receive the following kwargs:
+    # - find = Dict for filtering the update
+    # - update = Dict containing the update object
+    # - multi = Bool for multi flag
+    # - upsert = Bool for upsert flag
+    #
+    def UpdateDocuments(self, database, collection, **kwargs):
+        result = self.db[database][collection].update(kwargs.get('find', {}), kwargs.get('update', {}) , multi=kwargs.get('multi', False) , upsert=kwargs.get('upsert', False) , safe=True)
+        if result['err']:
+            return {'err':True}
+        else:
+            return { 'err':False , 'affected' : result['n'] }
+    
+    
 
 
     ##
@@ -112,14 +126,11 @@ class mongodb_handler():
             try:
                 res = self.db[database].command('aggregate' , collection , pipeline=pipeline_param)
             except pymongo.errors.OperationFailure as e:
-                print e
                 return { 'err' : True , 'errmsg' : e.message }
             except:
                 return { 'err' : True , 'errmsg' : 'Error on operation' }
             else:
                 return { 'err' : False , 'result' : res['result'] }
-            print res
-            return 
         else:
             return False
     
@@ -324,6 +335,28 @@ class MainFrame(wx.Frame):
         self.menuitem_closetab.Enable(self.tabs.GetPageCount() > 1)
 
 
+##
+# @brief Clipboard handler
+#
+class ClipboardHandler():
+    ##
+    # @brief Constructor - Sets the TextDataObject to store data
+    #
+    def __init__(self):
+        self.content = wx.TextDataObject()
+        self.data_setted = False
+
+    ##
+    # @brief Sets a value in Clipboard
+    #
+    def set(self, value):
+        self.content.SetText(value)
+        if not wx.TheClipboard.IsOpened() and not self.data_setted:
+            wx.TheClipboard.Open()
+            wx.TheClipboard.SetData(self.content)
+            wx.TheClipboard.Close()
+            self.data_setted = True
+
 
 ##
 # @brief The Connect dialog
@@ -434,7 +467,6 @@ class ContentTab(wx.Panel):
         
         # Building Splitter
         self.splitter = wx.SplitterWindow(self, style=wx.SP_3D)
-        self.splitter.Bind(wx.EVT_RIGHT_UP , fuuu)
 
         # Building Query Panel
         self.panel_query = QueryPanel(self.splitter, self.manager)
@@ -608,7 +640,7 @@ class ContentManager():
 
     
     ##
-    # @brief 
+    # @brief Defines the query object to be used for pagination and display
     #
     def SetQueryObject(self, **kwargs):
         if isinstance(kwargs.get('find', {}) , dict):
@@ -626,7 +658,17 @@ class ContentManager():
         
         if kwargs.get('reset_page', True):
             self.tab.spinctrl_page.SetValue(1)
-            
+
+
+    ##
+    # @brief Handler for update documents in database
+    #
+    def UpdateDocuments(self, **kwargs):
+        database = self.tab.combobox_database.GetValue()
+        collection = self.tab.combobox_collection.GetValue()
+        ret = db.UpdateDocuments(database, collection, **kwargs)
+        wx.MessageBox(str(ret['affected']) + ' documents affected', 'Info', wx.OK | wx.ICON_INFORMATION)
+
 ##
 # @brief Stores the document data, widgets and events
 #
@@ -659,8 +701,6 @@ class DocumentRenderer(wx.BoxSizer):
         self.content.Bind(wx.EVT_RIGHT_UP, self.OnContentRightClick)
         self.content.Bind(wx.EVT_LEFT_DCLICK, self.OnContentDoubleClick)
 
-        
-
         self.Add(collapsible , 1 , wx.GROW)
         
 
@@ -676,19 +716,19 @@ class DocumentRenderer(wx.BoxSizer):
     ##
     # @brief Collapsible Pane Document clicked right-clicked - Opens Context Menu
     #
-    def OnDocumentRightClick(self,event=None):
+    def OnDocumentRightClick(self, event=None):
         print 'collapsible right clicked'
 
     ##
     # @brief Static Text Content double-clicked - Opens Edit Window
     #
-    def OnContentDoubleClick(self,event=None):
+    def OnContentDoubleClick(self, event=None):
         print event.EventObject.content
 
     ##
     # @brief Static Text Content right-clicked - Opens Context Menu
     #
-    def OnContentRightClick(self,event=None):
+    def OnContentRightClick(self, event=None):
         obj = event.EventObject
         obj.PopupMenu(DocumentContextMenu(obj), event.GetPosition())
 
@@ -697,19 +737,57 @@ class DocumentRenderer(wx.BoxSizer):
 # @brief The Document Context Menu opened via right-click
 #
 class DocumentContextMenu(wx.Menu):
-    
+    ##
+    # @brief Constructor - Renders the menu itens and bind the events
+    #
     def __init__(self, parent):
         wx.Menu.__init__(self)
         
         self.parent = parent
 
-        m1 = wx.MenuItem(self, wx.ID_ANY, 'm1')
-        self.AppendItem(m1)
-        #self.Bind(wx.EVT_MENU, self.OnMinimize, mmi)
+        menu_collapse = wx.MenuItem(self, wx.ID_ANY, 'Collapse All Documents')
+        self.AppendItem(menu_collapse)
+        self.Bind(wx.EVT_MENU, self.OnCollapseAll, menu_collapse)
 
-        m2 = wx.MenuItem(self, wx.ID_ANY, 'm2')
-        self.AppendItem(m2)
+        menu_uncollapse = wx.MenuItem(self, wx.ID_ANY, 'Uncollapse All Documents')
+        self.AppendItem(menu_uncollapse)
+        self.Bind(wx.EVT_MENU, self.OnUncollapseAll, menu_uncollapse)
 
+        self.AppendSeparator()
+
+        menu_open = wx.MenuItem(self, wx.ID_ANY, 'Open Editor')
+        self.AppendItem(menu_open)
+        self.Bind(wx.EVT_MENU, self.OnOpen, menu_open)
+
+        menu_copy = wx.MenuItem(self, wx.ID_ANY, 'Copy to Clipboard')
+        self.AppendItem(menu_copy)
+        self.Bind(wx.EVT_MENU, self.OnCopy, menu_copy)
+
+
+    ##
+    # @brief Context Menu Collapse All Documents Clicked - Collapse all collapsible from document manager 
+    #
+    def OnCollapseAll(self, event=None):
+        print self.parent.Parent.Parent.GetChildren()
+
+
+    ##
+    # @brief Context Menu Uncollapse All Documents Clicked - Uncollapse all collapsible from document manager 
+    #
+    def OnUncollapseAll(self, event=None):
+        print event.EventObject.parent
+
+    ##
+    # @brief Context Menu Copy to Clipboard Clicked - Copies the document text to the system clipboard
+    #
+    def OnCopy(self, event=None):
+        clipboard.set(event.EventObject.parent.GetLabel())
+
+    ##
+    # @brief Context Menu Open Editor Clicked - Opens the Editor dialog with the clicked document
+    #
+    def OnOpen(self, event=None):
+        print 'open'
 
 ##
 # @brief The Query Panel for querying the collection
@@ -728,6 +806,7 @@ class QueryPanel(wx.Panel):
         self.sizer_leftmenu = wx.BoxSizer(wx.VERTICAL)
         self.togglebuttons_tabs = [
               wx.ToggleButton(self , wx.ID_ANY , label='Find' , name='find')
+            , wx.ToggleButton(self , wx.ID_ANY , label='Insert', name='insert')
             , wx.ToggleButton(self , wx.ID_ANY , label='Update', name='update')
             , wx.ToggleButton(self , wx.ID_ANY , label='Remove', name='remove')
             , wx.ToggleButton(self , wx.ID_ANY , label='Aggregate', name='aggregate')
@@ -769,9 +848,10 @@ class QueryPanel(wx.Panel):
     #
     def ChangeTab(self, tab):
         self.sizer_content.Clear(True)
+        font = wx.Font(10, wx.MODERN, wx.NORMAL, wx.NORMAL, False, u'Monospace')
         if tab == 'find':
             self.execute_param = 'find'
-            font = wx.Font(10, wx.MODERN, wx.NORMAL, wx.NORMAL, False, u'Monospace')
+            
             self.input_find = wx.TextCtrl(self , wx.ID_ANY , style=wx.TE_PROCESS_TAB | wx.TE_MULTILINE)
             self.input_find.SetFont(font)
             self.sizer_content.Add(wx.StaticText(self , wx.ID_ANY , label='Find Object') , 0 , wx.EXPAND)
@@ -783,13 +863,35 @@ class QueryPanel(wx.Panel):
             self.sizer_content.Add(self.input_fields , 1 , wx.EXPAND)
             
             self.input_find.SetFocus()
-        elif tab == 'update':
+        elif tab == 'insert':
             pass
+        elif tab == 'update':
+            self.execute_param = 'update'
+            self.input_find = wx.TextCtrl(self , wx.ID_ANY , style=wx.TE_PROCESS_TAB | wx.TE_MULTILINE)
+            self.input_find.SetFont(font)
+            self.sizer_content.Add(wx.StaticText(self , wx.ID_ANY , label='Find Object') , 0 , wx.EXPAND)
+            self.sizer_content.Add(self.input_find , 1 , wx.EXPAND)
+            
+            self.input_update = wx.TextCtrl(self , wx.ID_ANY , style=wx.TE_PROCESS_TAB | wx.TE_MULTILINE)
+            self.input_update.SetFont(font)
+            self.sizer_content.Add(wx.StaticText(self , wx.ID_ANY , label='Update Object') , 0 , wx.EXPAND)
+            self.sizer_content.Add(self.input_update , 1 , wx.EXPAND)
+            
+            sizer_buttons = wx.BoxSizer(wx.HORIZONTAL)
+            self.check_multi = wx.CheckBox(self, wx.ID_ANY , label='Multi')
+            sizer_buttons.Add(self.check_multi , 0)
+            
+            sizer_buttons.AddSpacer(10)
+            self.check_upsert = wx.CheckBox(self, wx.ID_ANY , label='Upsert')
+            sizer_buttons.Add(self.check_upsert , 0)
+            
+            self.sizer_content.Add(sizer_buttons , 0 , wx.EXPAND)
+            
+            self.input_find.SetFocus()
         elif tab == 'remove':
             pass
         elif tab == 'aggregate':
             self.execute_param = 'aggregate'
-            font = wx.Font(10, wx.MODERN, wx.NORMAL, wx.NORMAL, False, u'Monospace')
             self.input_pipeline = wx.TextCtrl(self , wx.ID_ANY , style=wx.TE_PROCESS_TAB | wx.TE_MULTILINE)
             self.input_pipeline.SetFont(font)
             self.sizer_content.Add(wx.StaticText(self , wx.ID_ANY , label='Pipeline') , 0 , wx.EXPAND)
@@ -822,6 +924,27 @@ class QueryPanel(wx.Panel):
             else:
                 wx.MessageBox('Invalid BSON object', 'Error', wx.OK | wx.ICON_ERROR)
 
+        elif self.execute_param == 'update':
+            find_value = self.input_find.GetValue().strip()
+            if find_value == '':
+                find_obj = False
+            else:
+                find_obj = db.bsonload(find_value)
+
+            update_value = self.input_update.GetValue().strip()
+            if update_value == '':
+                update_obj = False
+            else:
+                update_obj = db.bsonload(update_value)
+
+
+            if find_obj != False and update_obj != False:
+                self.manager.UpdateDocuments(find=find_obj, update=update_obj, multi=self.check_multi.GetValue() , upsert=self.check_upsert.GetValue())
+                self.manager.SetQueryObject(find=find_obj)
+                self.manager.ShowDocuments()
+            else:
+                wx.MessageBox('Invalid BSON object', 'Error', wx.OK | wx.ICON_ERROR)
+
         elif self.execute_param == 'aggregate':
             aggregate_value = self.input_pipeline.GetValue().strip()
             if aggregate_value == '':
@@ -841,11 +964,12 @@ class QueryPanel(wx.Panel):
 ###################################################################################################
 
 if __name__ == '__main__':
-    db = mongodb_handler()
+    db = MongodbHandler()
     app = wx.App()
     frame = MainFrame(None, title="Mongui - MongoDB Gui", size=(900, 500))
     frame.SetIcon(wx.Icon('img/mongui-icon.ico', wx.BITMAP_TYPE_ICO , 16 , 16))
     frame.Show()
+    clipboard = ClipboardHandler()
     app.MainLoop()
 
 
