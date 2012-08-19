@@ -473,6 +473,8 @@ class ContentTab(wx.Panel):
 
         # Building Content Panel
         self.scrollpanel_content = wxScrolledPanel.ScrolledPanel(self.splitter)
+        self.scrollpanel_content.Bind(wx.EVT_RIGHT_UP, self.OnContentRightClick)
+        
         self.flexsizer_content = wx.FlexGridSizer(50, 1, 2, 2)
         self.flexsizer_content.SetFlexibleDirection(wx.VERTICAL)
 
@@ -555,6 +557,15 @@ class ContentTab(wx.Panel):
             self.splitter.Unsplit(toRemove=self.panel_query)
 
         self.Refresh(buttons=False)
+        
+    
+    ##
+    # @brief Content Right Clicked - Opens context-menu
+    #
+    def OnContentRightClick(self, event=None):
+        obj = event.EventObject
+        obj.PopupMenu(DocumentContextMenu(obj, refresh=self.Refresh, general=True), event.GetPosition())
+            
     ##
     # @brief Recalculate the layout
     #
@@ -730,7 +741,7 @@ class DocumentRenderer(wx.BoxSizer):
     #
     def OnContentRightClick(self, event=None):
         obj = event.EventObject
-        obj.PopupMenu(DocumentContextMenu(obj), event.GetPosition())
+        obj.PopupMenu(DocumentContextMenu(obj, refresh=self.onclick), event.GetPosition())
 
 
 ##
@@ -740,42 +751,44 @@ class DocumentContextMenu(wx.Menu):
     ##
     # @brief Constructor - Renders the menu itens and bind the events
     #
-    def __init__(self, parent):
+    def __init__(self, parent, **kwargs):
         wx.Menu.__init__(self)
         
         self.parent = parent
+        self.refresh = kwargs.get('refresh', None)
 
         menu_collapse = wx.MenuItem(self, wx.ID_ANY, 'Collapse All Documents')
         self.AppendItem(menu_collapse)
-        self.Bind(wx.EVT_MENU, self.OnCollapseAll, menu_collapse)
+        self.Bind(wx.EVT_MENU, lambda event: self.OnCollapseAll(event, collapse=True), menu_collapse)
 
         menu_uncollapse = wx.MenuItem(self, wx.ID_ANY, 'Uncollapse All Documents')
         self.AppendItem(menu_uncollapse)
-        self.Bind(wx.EVT_MENU, self.OnUncollapseAll, menu_uncollapse)
+        self.Bind(wx.EVT_MENU, lambda event: self.OnCollapseAll(event, collapse=False), menu_uncollapse)
 
-        self.AppendSeparator()
-
-        menu_open = wx.MenuItem(self, wx.ID_ANY, 'Open Editor')
-        self.AppendItem(menu_open)
-        self.Bind(wx.EVT_MENU, self.OnOpen, menu_open)
-
-        menu_copy = wx.MenuItem(self, wx.ID_ANY, 'Copy to Clipboard')
-        self.AppendItem(menu_copy)
-        self.Bind(wx.EVT_MENU, self.OnCopy, menu_copy)
-
-
-    ##
-    # @brief Context Menu Collapse All Documents Clicked - Collapse all collapsible from document manager 
-    #
-    def OnCollapseAll(self, event=None):
-        print self.parent.Parent.Parent.GetChildren()
+        if not kwargs.get('general', False):
+            self.AppendSeparator()
+    
+            menu_open = wx.MenuItem(self, wx.ID_ANY, 'Open Editor')
+            self.AppendItem(menu_open)
+            self.Bind(wx.EVT_MENU, self.OnOpen, menu_open)
+    
+            menu_copy = wx.MenuItem(self, wx.ID_ANY, 'Copy to Clipboard')
+            self.AppendItem(menu_copy)
+            self.Bind(wx.EVT_MENU, self.OnCopy, menu_copy)
 
 
     ##
-    # @brief Context Menu Uncollapse All Documents Clicked - Uncollapse all collapsible from document manager 
+    # @brief Context Menu Collapse/Uncollapse All Documents Clicked - Collapse/Uncollapse all collapsible from document manager 
     #
-    def OnUncollapseAll(self, event=None):
-        print event.EventObject.parent
+    def OnCollapseAll(self, event=None, **kwargs):
+        if self.parent.Name == 'scrolledpanel':
+            panels = self.parent.GetChildren()
+        else:
+            panels = self.parent.Parent.Parent.Parent.GetChildren()
+        for panel in panels:
+            panel.Collapse() if kwargs.get('collapse', True) else panel.Expand()
+        self.refresh() if self.refresh else None
+
 
     ##
     # @brief Context Menu Copy to Clipboard Clicked - Copies the document text to the system clipboard
